@@ -14,8 +14,10 @@ The repo currently contains:
 - plugin scan/instantiate validation with clear load failure states
 - floating native plugin editor window when available
 - searchable host-side parameter panel with live parameter control
+- an on-screen MIDI keyboard for live preview
+- mirrored external MIDI input visualization on the host keyboard
 
-The next milestone is MIDI input and playback.
+The next milestone is MIDI clip import and offline WAV rendering.
 
 ## Requirements
 
@@ -57,4 +59,13 @@ build\vst_host_artefacts\Debug\VST Host.exe
   - current value text
   - direct slider-based host control
   - live updates as parameter values change
+
+## Current MIDI behavior
+
+- the main window includes an on-screen piano keyboard for live note preview
+- the keyboard sends notes to the hosted synth through the same `AudioProcessorPlayer` MIDI collector used by the real-time host path
+- enabled external MIDI input devices still feed the hosted plugin directly
+- incoming external note events are mirrored onto the on-screen keyboard for visual feedback
+- the keyboard can also use the computer keyboard when it has focus
+- the host exposes channel, base-octave, and **All Notes Off** controls next to the keyboard
 

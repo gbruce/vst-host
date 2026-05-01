@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a Windows-only standalone desktop application that hosts one instrument/synth VST3, embeds its native UI, exposes a searchable generic parameter panel, supports live preview and offline WAV rendering, and accepts note input from an on-screen keyboard, external MIDI devices, and simple MIDI clip import.
+Build a Windows-only standalone desktop application that hosts one instrument/synth VST3, opens its native UI in a floating window, exposes a searchable generic parameter panel, supports live preview and offline WAV rendering, and accepts note input from an on-screen keyboard, external MIDI devices, and simple MIDI clip import.
 
 ## Product Scope
 
@@ -43,13 +43,13 @@ Build a Windows-only standalone desktop application that hosts one instrument/sy
 
 Use a narrow single-plugin audio graph:
 
-`MIDI input -> hosted VST3 synth -> stereo audio output`
+`On-screen keyboard / external MIDI / imported MIDI -> hosted VST3 synth -> stereo audio output`
 
 Core responsibilities:
 
 1. Load and instantiate one VST3 synth from a file path.
 2. Initialize audio and MIDI devices.
-3. Embed the plugin's native editor in the host window.
+3. Open the plugin's native editor in a floating window.
 4. Enumerate plugin parameters and expose them in a searchable host-owned panel.
 5. Route MIDI from UI keyboard, external devices, and imported MIDI clips.
 6. Support both realtime playback and offline rendering.
@@ -71,7 +71,7 @@ Core responsibilities:
 
 ### 3. UI hosting and parameter control
 
-- Embed the plugin's native editor
+- Open the plugin's native editor in a floating window
 - Enumerate parameters with name, range, and current value
 - Build a searchable generic parameter panel
 - Support host-driven parameter changes safely
@@ -106,12 +106,20 @@ Core responsibilities:
 
 ## Recommended Milestones
 
-1. App window, audio device manager, and MIDI device setup
-2. Load one VST3 synth and produce live audio
-3. Embed plugin editor and expose generic parameter list
-4. Add on-screen keyboard and external MIDI input
+1. App window, audio device manager, and MIDI device setup **(done)**
+2. Load one VST3 synth and produce live audio **(done)**
+3. Open plugin editor in a floating window and expose generic parameter list **(done)**
+4. Add on-screen keyboard and external MIDI input **(done)**
 5. Add MIDI import and offline WAV render
 6. Add session save/load and polish error handling
+
+## Progress Notes
+
+- The standalone JUCE host can load one VST3 instrument at a time and route it to the live audio output.
+- Audio device settings and enabled MIDI inputs persist across launches.
+- The hosted plugin's native UI opens in a separate floating editor window, while the main window keeps parameter search and host controls visible.
+- The host now includes an on-screen MIDI keyboard, channel/base-octave controls, and an All Notes Off action for live preview.
+- Enabled external MIDI devices continue feeding the plugin directly and now mirror note activity onto the host keyboard display.
 
 ## Success Criteria
 
