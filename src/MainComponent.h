@@ -13,6 +13,8 @@ public:
     void resized() override;
 
 private:
+    class PluginEditorWindow;
+
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
 
     void initialiseAudioDevices();
@@ -20,6 +22,11 @@ private:
     void choosePluginToLoad();
     void loadPluginFromFile(const juce::File& file);
     void unloadPlugin();
+    void showPluginEditorWindow();
+    void closePluginEditorWindow();
+    void rebuildParameterRows();
+    void clearParameterRows();
+    void layoutParameterRows();
     void saveSettings();
     void refreshStatusText();
     void refreshPluginState();
@@ -32,7 +39,11 @@ private:
     juce::AudioPluginFormatManager pluginFormatManager;
     std::unique_ptr<juce::AudioPluginInstance> hostedPlugin;
     juce::PluginDescription hostedPluginDescription;
+    std::unique_ptr<PluginEditorWindow> pluginEditorWindow;
     std::unique_ptr<juce::FileChooser> pluginFileChooser;
+    juce::OwnedArray<juce::Component> parameterRowComponents;
+    int totalParameterCount = 0;
+    int filteredParameterCount = 0;
     bool isPluginLoading = false;
     juce::String lastPluginError;
 
@@ -44,10 +55,16 @@ private:
     juce::Label pluginStatusLabel;
     juce::TextEditor pluginDetailsEditor;
     juce::TextButton loadPluginButton { "Load VST3..." };
+    juce::TextButton showEditorButton { "Show Editor" };
     juce::TextButton unloadPluginButton { "Unload VST3" };
     juce::TextButton renderButton { "Render WAV (next milestone)" };
+    juce::GroupComponent parameterGroup;
+    juce::TextEditor parameterSearchEditor;
+    juce::Label parameterCountLabel;
+    juce::Viewport parameterViewport;
+    juce::Component parameterListContent;
+    juce::Label parameterEmptyStateLabel;
     juce::AudioDeviceSelectorComponent deviceSelector;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };
-
