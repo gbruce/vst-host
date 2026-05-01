@@ -19,6 +19,7 @@ constexpr int headerHeight = 90;
 constexpr int buttonRowHeight = 36;
 constexpr int statusHeight = 110;
 constexpr int pluginInfoHeight = 140;
+constexpr int midiKeyboardAreaHeight = 150;
 constexpr int deviceAreaHeight = 250;
 
 juce::String joinEnabledMidiInputs(juce::AudioDeviceManager& deviceManager)
@@ -281,6 +282,7 @@ private:
 
 MainComponent::MainComponent(juce::ApplicationProperties& applicationProperties)
     : appProperties(applicationProperties),
+      midiKeyboardGroup({}, "MIDI Input + Keyboard"),
       parameterGroup({}, "Parameters"),
       deviceSelector(deviceManager, 0, 0, 0, 2, true, false, true, false)
 {
@@ -300,7 +302,7 @@ MainComponent::MainComponent(juce::ApplicationProperties& applicationProperties)
 
     roadmapLabel.setJustificationType(juce::Justification::topLeft);
     roadmapLabel.setColour(juce::Label::textColourId, juce::Colours::lightgreen);
-    roadmapLabel.setText("Milestone 3: plugin editors open in a floating window and parameters stay searchable in the main host. Next: note input and playback.", juce::dontSendNotification);
+    roadmapLabel.setText("Milestone 4: live note input now comes from the on-screen keyboard and external MIDI devices. Next: MIDI import and offline WAV render.", juce::dontSendNotification);
 
     pluginStatusLabel.setJustificationType(juce::Justification::topLeft);
     pluginStatusLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
@@ -313,6 +315,52 @@ MainComponent::MainComponent(juce::ApplicationProperties& applicationProperties)
     pluginDetailsEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff101217));
     pluginDetailsEditor.setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff2a2f3a));
     pluginDetailsEditor.setColour(juce::TextEditor::textColourId, juce::Colours::white);
+
+    midiKeyboardGroup.setTextLabelPosition(juce::Justification::centredLeft);
+    midiKeyboardHintLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    midiKeyboardHintLabel.setJustificationType(juce::Justification::centredLeft);
+
+    midiChannelLabel.setText("Channel", juce::dontSendNotification);
+    midiChannelLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    midiChannelLabel.setJustificationType(juce::Justification::centredRight);
+
+    for (int channel = 1; channel <= 16; ++channel)
+        midiChannelComboBox.addItem(juce::String(channel), channel);
+
+    midiChannelComboBox.setSelectedId(1, juce::dontSendNotification);
+    midiChannelComboBox.onChange = [this]
+    {
+        midiKeyboardComponent.setMidiChannel(midiChannelComboBox.getSelectedId());
+        updateMidiKeyboardControls();
+    };
+
+    midiKeyboardComponent.setWantsKeyboardFocus(true);
+    midiKeyboardComponent.setAvailableRange(24, 108);
+    midiKeyboardComponent.setLowestVisibleKey(36);
+    midiKeyboardComponent.setKeyWidth(15.0f);
+    midiKeyboardComponent.setScrollButtonsVisible(true);
+    midiKeyboardComponent.setKeyPressBaseOctave(midiKeyboardBaseOctave);
+    midiKeyboardComponent.setOctaveForMiddleC(4);
+
+    octaveDownButton.onClick = [this]
+    {
+        midiKeyboardBaseOctave = juce::jlimit(0, 10, midiKeyboardBaseOctave - 1);
+        midiKeyboardComponent.setKeyPressBaseOctave(midiKeyboardBaseOctave);
+        updateMidiKeyboardControls();
+    };
+
+    octaveUpButton.onClick = [this]
+    {
+        midiKeyboardBaseOctave = juce::jlimit(0, 10, midiKeyboardBaseOctave + 1);
+        midiKeyboardComponent.setKeyPressBaseOctave(midiKeyboardBaseOctave);
+        updateMidiKeyboardControls();
+    };
+
+    allNotesOffButton.onClick = [this]
+    {
+        midiKeyboardState.allNotesOff(0);
+        midiKeyboardState.reset();
+    };
 
     parameterGroup.setTextLabelPosition(juce::Justification::centredLeft);
 
@@ -338,7 +386,7 @@ MainComponent::MainComponent(juce::ApplicationProperties& applicationProperties)
     unloadPluginButton.setEnabled(false);
     renderButton.setEnabled(false);
 
-    for (auto* component : std::array<juce::Component*, 13> {
+    for (auto* component : std::array<juce::Component*, 21> {
              &titleLabel,
              &summaryLabel,
              &audioStatusLabel,
@@ -350,6 +398,14 @@ MainComponent::MainComponent(juce::ApplicationProperties& applicationProperties)
              &showEditorButton,
              &unloadPluginButton,
              &renderButton,
+             &midiKeyboardGroup,
+             &midiKeyboardHintLabel,
+             &midiChannelLabel,
+             &midiChannelComboBox,
+             &octaveDownButton,
+             &octaveUpButton,
+             &allNotesOffButton,
+             &midiKeyboardComponent,
              &parameterGroup,
              &parameterSearchEditor,
          })
@@ -362,13 +418,16 @@ MainComponent::MainComponent(juce::ApplicationProperties& applicationProperties)
     addAndMakeVisible(parameterEmptyStateLabel);
     addAndMakeVisible(deviceSelector);
 
+    midiKeyboardState.addListener(&processorPlayer.getMidiMessageCollector());
     deviceManager.addAudioCallback(&processorPlayer);
     deviceManager.addMidiInputDeviceCallback({}, &processorPlayer);
+    deviceManager.addMidiInputDeviceCallback({}, this);
     deviceManager.addChangeListener(this);
 
     initialiseAudioDevices();
     refreshStatusText();
     refreshPluginState();
+    updateMidiKeyboardControls();
 
     setSize(1180, 900);
 }
@@ -378,12 +437,14 @@ MainComponent::~MainComponent()
     pluginFileChooser.reset();
     closePluginEditorWindow();
     clearParameterRows();
+    midiKeyboardState.removeListener(&processorPlayer.getMidiMessageCollector());
     processorPlayer.setProcessor(nullptr);
     hostedPlugin.reset();
 
     saveSettings();
 
     deviceManager.removeChangeListener(this);
+    deviceManager.removeMidiInputDeviceCallback({}, this);
     deviceManager.removeMidiInputDeviceCallback({}, &processorPlayer);
     deviceManager.removeAudioCallback(&processorPlayer);
 }
@@ -400,6 +461,8 @@ void MainComponent::resized()
     auto buttonRow = area.removeFromTop(buttonRowHeight);
     auto status = area.removeFromTop(statusHeight);
     auto pluginArea = area.removeFromTop(pluginInfoHeight);
+    area.removeFromTop(sectionGap);
+    auto midiKeyboardArea = area.removeFromTop(midiKeyboardAreaHeight);
     auto deviceArea = area.removeFromBottom(deviceAreaHeight);
 
     titleLabel.setBounds(header.removeFromTop(34));
@@ -421,6 +484,24 @@ void MainComponent::resized()
     pluginArea.removeFromTop(8);
     pluginDetailsEditor.setBounds(pluginArea);
 
+    midiKeyboardGroup.setBounds(midiKeyboardArea);
+    auto midiInner = midiKeyboardArea.reduced(12);
+    midiInner.removeFromTop(28);
+    auto midiTopRow = midiInner.removeFromTop(28);
+    midiKeyboardHintLabel.setBounds(midiTopRow.removeFromLeft(juce::jmax(200, midiTopRow.getWidth() - 432)));
+    allNotesOffButton.setBounds(midiTopRow.removeFromRight(110));
+    midiTopRow.removeFromRight(8);
+    octaveUpButton.setBounds(midiTopRow.removeFromRight(84));
+    midiTopRow.removeFromRight(8);
+    octaveDownButton.setBounds(midiTopRow.removeFromRight(84));
+    midiTopRow.removeFromRight(8);
+    midiChannelComboBox.setBounds(midiTopRow.removeFromRight(70));
+    midiTopRow.removeFromRight(8);
+    midiChannelLabel.setBounds(midiTopRow.removeFromRight(60));
+    midiInner.removeFromTop(8);
+    midiKeyboardComponent.setBounds(midiInner);
+
+    area.removeFromTop(sectionGap);
     area.removeFromBottom(sectionGap);
     parameterGroup.setBounds(area);
 
@@ -445,6 +526,11 @@ void MainComponent::changeListenerCallback(juce::ChangeBroadcaster* source)
     refreshStatusText();
     refreshPluginState();
     saveSettings();
+}
+
+void MainComponent::handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMessage& message)
+{
+    midiKeyboardState.processNextMidiEvent(message);
 }
 
 void MainComponent::initialiseAudioDevices()
@@ -573,6 +659,8 @@ void MainComponent::loadPluginFromFile(const juce::File& file)
     if (instance == nullptr)
         return failLoad("JUCE could not create the VST3 instance.\n\n" + errorMessage);
 
+    midiKeyboardState.allNotesOff(0);
+    midiKeyboardState.reset();
     processorPlayer.setProcessor(nullptr);
     closePluginEditorWindow();
     clearParameterRows();
@@ -596,6 +684,8 @@ void MainComponent::unloadPlugin()
     pluginFileChooser.reset();
     isPluginLoading = false;
     lastPluginError.clear();
+    midiKeyboardState.allNotesOff(0);
+    midiKeyboardState.reset();
     processorPlayer.setProcessor(nullptr);
     closePluginEditorWindow();
     clearParameterRows();
@@ -697,6 +787,27 @@ void MainComponent::layoutParameterRows()
     parameterListContent.setSize(availableWidth, juce::jmax(1, y));
 }
 
+void MainComponent::updateMidiKeyboardControls()
+{
+    const auto pluginLoaded = hostedPlugin != nullptr && ! isPluginLoading;
+    const auto midiChannel = juce::jlimit(1, 16, midiChannelComboBox.getSelectedId());
+
+    midiKeyboardComponent.setEnabled(pluginLoaded);
+    octaveDownButton.setEnabled(pluginLoaded && midiKeyboardBaseOctave > 0);
+    octaveUpButton.setEnabled(pluginLoaded && midiKeyboardBaseOctave < 10);
+    allNotesOffButton.setEnabled(pluginLoaded);
+    midiChannelComboBox.setEnabled(pluginLoaded);
+
+    const juce::String hintText = pluginLoaded
+        ? "Click the keyboard or focus it and use your computer keys. External MIDI input is mirrored here."
+        : "Load a VST3 instrument to audition notes from the on-screen keyboard or external MIDI.";
+
+    midiKeyboardHintLabel.setText(hintText
+                                  + " Sending on channel " + juce::String(midiChannel)
+                                  + " from base octave C" + juce::String(midiKeyboardBaseOctave) + ".",
+                                  juce::dontSendNotification);
+}
+
 void MainComponent::saveSettings()
 {
     if (auto state = deviceManager.createStateXml())
@@ -753,6 +864,7 @@ void MainComponent::refreshPluginState()
         parameterEmptyStateLabel.setText("Loading parameters...", juce::dontSendNotification);
         parameterCountLabel.setText({}, juce::dontSendNotification);
         showEditorButton.setButtonText("Show Editor");
+        updateMidiKeyboardControls();
         return;
     }
 
@@ -820,6 +932,7 @@ void MainComponent::refreshPluginState()
             }
         }
 
+        updateMidiKeyboardControls();
         return;
     }
 
@@ -846,6 +959,7 @@ void MainComponent::refreshPluginState()
     parameterViewport.setVisible(false);
     parameterEmptyStateLabel.setVisible(true);
     parameterEmptyStateLabel.setText("Load a plug-in to inspect and search its parameters.", juce::dontSendNotification);
+    updateMidiKeyboardControls();
 }
 
 double MainComponent::getCurrentSampleRate() const

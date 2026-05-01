@@ -3,7 +3,8 @@
 #include <JuceHeader.h>
 
 class MainComponent final : public juce::Component,
-                            private juce::ChangeListener
+                            private juce::ChangeListener,
+                            private juce::MidiInputCallback
 {
 public:
     explicit MainComponent(juce::ApplicationProperties& applicationProperties);
@@ -16,6 +17,7 @@ private:
     class PluginEditorWindow;
 
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
+    void handleIncomingMidiMessage(juce::MidiInput* source, const juce::MidiMessage& message) override;
 
     void initialiseAudioDevices();
     void restoreMidiInputSelection();
@@ -27,6 +29,7 @@ private:
     void rebuildParameterRows();
     void clearParameterRows();
     void layoutParameterRows();
+    void updateMidiKeyboardControls();
     void saveSettings();
     void refreshStatusText();
     void refreshPluginState();
@@ -35,6 +38,7 @@ private:
 
     juce::ApplicationProperties& appProperties;
     juce::AudioDeviceManager deviceManager;
+    juce::MidiKeyboardState midiKeyboardState;
     juce::AudioProcessorPlayer processorPlayer;
     juce::AudioPluginFormatManager pluginFormatManager;
     std::unique_ptr<juce::AudioPluginInstance> hostedPlugin;
@@ -58,6 +62,15 @@ private:
     juce::TextButton showEditorButton { "Show Editor" };
     juce::TextButton unloadPluginButton { "Unload VST3" };
     juce::TextButton renderButton { "Render WAV (next milestone)" };
+    juce::GroupComponent midiKeyboardGroup;
+    juce::Label midiKeyboardHintLabel;
+    juce::Label midiChannelLabel;
+    juce::ComboBox midiChannelComboBox;
+    juce::TextButton octaveDownButton { "Octave -" };
+    juce::TextButton octaveUpButton { "Octave +" };
+    juce::TextButton allNotesOffButton { "All Notes Off" };
+    juce::MidiKeyboardComponent midiKeyboardComponent { midiKeyboardState, juce::MidiKeyboardComponent::horizontalKeyboard };
+    int midiKeyboardBaseOctave = 4;
     juce::GroupComponent parameterGroup;
     juce::TextEditor parameterSearchEditor;
     juce::Label parameterCountLabel;
